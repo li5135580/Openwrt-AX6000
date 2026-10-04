@@ -112,7 +112,7 @@ jobs:
           echo "WRT_INFO=$WRT_INFO" >> $GITHUB_ENV
           echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?=\=y)' ./Config/$WRT_CONFIG.txt)" >> $GITHUB_ENV
           echo "WRT_WIFI=wifi-yes" >> $GITHUB_ENV
-          echo "WRT_EXTRA_CONFIG=$([[ -f ./Config/GENERAL_AX6600_${WRT_PROFILE_UPPER}.txt ]] && echo ./Config/GENERAL_AX6600_${WRT_PROFILE_UPPER}.txt || true)" >> $GITHUB_ENV
+          echo "WRT_EXTRA_CONFIG=$([[ -f ./Config/GENERAL_AX6000_${WRT_PROFILE_UPPER}.txt ]] && echo ./Config/GENERAL_AX6000_${WRT_PROFILE_UPPER}.txt || true)" >> $GITHUB_ENV
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
 
@@ -227,7 +227,7 @@ jobs:
             cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt >> .config
           else
             #cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL.txt >> .config
-            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL_AX6600.txt ${WRT_EXTRA_CONFIG:+$GITHUB_WORKSPACE/${WRT_EXTRA_CONFIG#./}} >> .config
+            cat $GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt $GITHUB_WORKSPACE/Config/GENERAL_AX6000.txt ${WRT_EXTRA_CONFIG:+$GITHUB_WORKSPACE/${WRT_EXTRA_CONFIG#./}} >> .config
           fi
 
           $GITHUB_WORKSPACE/Scripts/Settings.sh
@@ -288,7 +288,7 @@ jobs:
             for FILE in $(find ./bin/targets/ -type f -iname "*$WRT_TARGET*") ; do
               EXT=$(basename $FILE | cut -d '.' -f 2-)
               NAME=$(basename $FILE | cut -d '.' -f 1 | grep -io "\($WRT_TARGET\).*")
-              # 去掉恒定的平台前缀（qualcommax-），保留 ipq60xx 及设备型号
+              # 去掉恒定的平台前缀（mediatek-），保留 filogic 及设备型号
               NAME=${NAME#*-}
               NEW_FILE="$WRT_INFO"-"$WRT_BRANCH"-"${WRT_PROFILE,,}"-"$NAME"-"$WRT_DATE"."$EXT"
               mv -f $FILE ./upload/$NEW_FILE
@@ -297,7 +297,8 @@ jobs:
             find ./bin/targets/ -type f -exec mv -f {} ./upload/ \;
 
             # 对最终命名后的固件生成校验文件，供用户刷机前验证下载完整性；失败不阻塞发布
-            (cd ./upload/ && sha256sum *.bin > sha256sums.txt) || true
+            # filogic 的 sysupgrade 是 .itb 格式，需与 .bin 一并纳入校验
+            (cd ./upload/ && sha256sum *.bin *.itb > sha256sums.txt 2>/dev/null || sha256sum *.bin > sha256sums.txt) || true
 
             make clean -j$(nproc)
           fi
@@ -323,7 +324,7 @@ jobs:
           tag_name: ${{ env.WRT_CONFIG }}-${{ env.WRT_PROFILE }}-${{ env.WRT_INFO }}-${{ env.WRT_BRANCH }}-${{ env.WRT_DATE }}
           files: ./wrt/upload/*.*
           body: |
-            📦 OpenWrt 自动编译固件（AX6600 / IPQ6010）
+            📦 OpenWrt 自动编译固件（AX6000 / MT7986A）
             ━━━━━━━━━━━━━━━━━━━━━━━
 
             📌 基本信息
@@ -340,14 +341,14 @@ jobs:
             ━━━━━━━━━━━━━━━━━━━━━━━
 
             🧩 设备与平台
-            设备型号：${{ env.WRT_SOURCE }}
+            设备型号：京东云无线宝百里 AX6000（RE-CP-03）
             硬件平台：${{ env.WRT_TARGET }}
-            CPU架构：Qualcomm IPQ6010 / IPQ60xx
+            CPU架构：MediaTek MT7986A / Filogic 830
             ━━━━━━━━━━━━━━━━━━━━━━━
 
             ⚙️ 固件特性
-            - NSS 硬件加速支持
-            - 基于 OpenWrt / ImmortalWrt
+            - WED 无线硬件卸载支持
+            - 基于 OpenWrt / ImmortalWrt（master 快照，每日跟随上游）
             - 常用 LuCI 插件预集成
             - 云端自动编译更新
             - 支持自定义配置构建
@@ -361,16 +362,14 @@ jobs:
             WiFi 密码：${{ env.WRT_WORD }}
             ━━━━━━━━━━━━━━━━━━━━━━━
 
-            📶 WiFi 推荐设置（雅典娜三频三 WiFi）
-            - 2.4G（2×2）：信道 11，带宽 20MHz
-            - 5G-1 游戏频段（4×4）：信道 44，带宽 160MHz（无法开启或断流则回退 80MHz）
-            - 5G-2 影音频段（2×2）：信道 149，带宽 80MHz
+            📶 WiFi 推荐设置（百里双频）
+            - 2.4G（4×4）：信道 11，带宽 20MHz（抗干扰优先）
+            - 5G（4×4）：信道 36-64 开 160MHz 满血（DFS 信道，介意雷达断流则信道 149 + 80MHz）
             - 通用：地区 US，发射功率 24 dBm，加密 WPA2-PSK（CCMP 算法）
             ━━━━━━━━━━━━━━━━━━━━━━━
             📥 下载与刷机说明
             - 本 Release 为 ${{ env.WRT_PROFILE }} 版固件；两个版本分开发布，请从 README 下载入口按需选择
-            - 首次从原厂固件刷入：选文件名带 factory 的文件
-            - 已是 OpenWrt/ImmortalWrt 升级：选文件名带 sysupgrade 的文件
+            - 百里（MT7986A）无 factory 镜像：首次刷入需用 U-Boot 刷写 bl2/fip/gpt 后引导，系统内升级选 sysupgrade.itb
             - 刷机 / 救砖完整教程：[刷机救砖教程](${{ github.server_url }}/${{ github.repository }}/blob/main/Docs/刷机救砖教程.md)
             - Config-*.txt：本次编译的完整 .config 配置，便于复现或二次定制
             - Packages-*.txt：外部插件（OpenClash / PassWall2 等）的仓库、分支与 commit 记录（纯净版无外部插件，无此文件）

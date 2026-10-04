@@ -7,22 +7,19 @@ on:
   workflow_dispatch:
     inputs:
       CONFIG:
-        default: 'IPQ60XX-WIFI-YES'
+        default: 'MT798X-WIFI-YES'
         required: true
         type: choice
         options:
-          - IPQ60XX-WIFI-YES
+          - MT798X-WIFI-YES
       SOURCE:
-        default: 'ones20250/immortalwrt_ipq'
+        default: 'immortalwrt/immortalwrt'
         required: true
         type: choice
         options:
-          - ones20250/immortalwrt_ipq
           - immortalwrt/immortalwrt
-          - LiBwrt/openwrt-6.x
-          - qosmio/openwrt-ipq
       BRANCH:
-        default: 'main'
+        default: 'master'
         required: true
         type: string
       PACKAGE:
