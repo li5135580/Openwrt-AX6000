@@ -149,11 +149,39 @@ Releases 页面每个版本包含以下文件（PURE 与 PLUS 分开发布）：
 
 ---
 
-## 🔗 上游源码
+## 🔗 上游源码与致谢
 
-| 项目 | 仓库地址 | 说明 |
-|------|---------|------|
-| **ImmortalWrt** | [immortalwrt/immortalwrt](https://github.com/immortalwrt/immortalwrt.git)（`master` 分支） | 本项目唯一源码，百里已获官方支持，无需私有 fork |
+本项目站在以下开源项目的肩膀上，在此致谢：
+
+### 项目来源
+
+| 项目 | 说明 |
+|------|------|
+| [ones20250/Openwrt-AX6600](https://github.com/ones20250/Openwrt-AX6600) | **本仓库改造自该项目**（京东云雅典娜 AX6600 固件 CI），PURE/PLUS 双版本机制、编译核心工作流、脚本框架均源自于此 |
+| [VIKINGYFY/OpenWrt-CI](https://github.com/VIKINGYFY/OpenWrt-CI) | 编译缓存机制代码出处（MIT, Copyright 2026 VIKINGYFY） |
+
+### 固件源码
+
+| 项目 | 说明 |
+|------|------|
+| [immortalwrt/immortalwrt](https://github.com/immortalwrt/immortalwrt)（`master` 分支） | 本项目唯一固件源码，百里 RE-CP-03 已获官方支持，无需私有 fork |
+| [openwrt/openwrt](https://github.com/openwrt/openwrt) | ImmortalWrt 的上游，mt76 无线驱动与 WED 硬件卸载的源头 |
+
+### 插件来源（PLUS 版）
+
+| 项目 | 说明 |
+|------|------|
+| [vernesong/OpenClash](https://github.com/vernesong/OpenClash) | OpenClash 插件源码 |
+| [Openwrt-Passwall/openwrt-passwall2](https://github.com/Openwrt-Passwall/openwrt-passwall2) | PassWall2 插件源码 |
+| [Openwrt-Passwall/openwrt-passwall-packages](https://github.com/Openwrt-Passwall/openwrt-passwall-packages) | xray / sing-box 等依赖包 feed |
+| [sirpdboy/luci-app-partexp](https://github.com/sirpdboy/luci-app-partexp) | 分区扩容插件 |
+| [ones20250/packages](https://github.com/ones20250/packages) | wolplus 网络唤醒增强插件 |
+
+### GitHub Actions 组件
+
+[softprops/action-gh-release](https://github.com/softprops/action-gh-release) · [ophub/delete-releases-workflows](https://github.com/ophub/delete-releases-workflows) · [P3TERX/ssh2actions](https://github.com/P3TERX/ssh2actions)
+
+> 若原作者认为本仓库的引用方式有不妥之处，请提 Issue 联系处理。
 
 ## 🚀 自定义编译
 
