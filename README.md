@@ -195,9 +195,10 @@ Releases 页面每个版本包含以下文件（PURE 与 PLUS 分开发布）：
 
 ### 触发编译
 
-- **每日自动编译**：每天早上 6 点（北京时间）由 `Auto-Clean` 清理旧产物后自动触发 `MTK-ALL`。
-- **手动全量编译**：Actions → `MTK-ALL` → Run workflow，同时构建 PURE 与 PLUS 两个版本。
-- **配置验证**：Actions → `WRT-TEST`，可选择 `PROFILE` 并勾选 `TEST=true`，仅生成最终 `.config` 不编译固件，几分钟出结果。
+- **每 6 小时检测上游更新**：每 6 小时自动比对 immortalwrt master 与插件仓库（PLUS 版含 OpenClash / PassWall2 等）相对上次 Release 是否有新 commit——**有变化立即编译**，均无变化则跳过不重复出包，上游修复最迟 6 小时内跟进。
+- **每日清理**：每天早上 6 点（北京时间）`Auto-Clean` 清理旧 Release（保留最近 100 个）与旧运行记录，完成后也会触发一次检测。
+- **手动编译**：Actions → `MTK-ALL` → Run workflow，同时构建 PURE 与 PLUS，手动触发跳过上游比对、永远直接编译。
+- **配置验证**：Actions → `WRT-TEST`，仅生成最终 `.config` 不编译固件，几分钟出结果。
 
 ---
 

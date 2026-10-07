@@ -116,7 +116,74 @@ jobs:
           echo "WRT_KVER=none" >> $GITHUB_ENV
           echo "WRT_LIST=none" >> $GITHUB_ENV
 
+      - name: Check Upstream Changes
+        id: changes
+        run: |
+          # 默认不跳过
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          # 自动触发（每小时 schedule 或 Auto-Clean 的 workflow_run）执行跳过判断；
+          # 手动触发（workflow_dispatch）与 TEST 模式一律正常编译
+          case "${{ github.event_name }}" in
+            schedule|workflow_run) ;;
+            *) echo "Manual build, always compile."; exit 0 ;;
+          esac
+          if [[ "$WRT_TEST" == "true" ]]; then
+            echo "Test build, always compile."
+            exit 0
+          fi
+
+          # 以同配置同版本的最近一次 Release 为比对基准
+          LATEST_TAG=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
+            --jq "[.[] | select(.tag_name | startswith(\"$WRT_CONFIG-$WRT_PROFILE-\"))] | sort_by(.created_at) | last | .tag_name // empty" 2>/dev/null) || LATEST_TAG=""
+          if [[ -z "$LATEST_TAG" ]]; then
+            echo "No previous release for $WRT_CONFIG-$WRT_PROFILE, build."
+            exit 0
+          fi
+          echo "Last release: $LATEST_TAG"
+
+          # 比对 immortalwrt 源码 commit（Release 正文记录的是短哈希，前缀匹配）
+          LAST_HASH=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$LATEST_TAG" --jq '.body' 2>/dev/null \
+            | grep -oP '提交版本：\K[0-9a-f]+' | head -1) || LAST_HASH=""
+          CUR_HASH=$(git ls-remote "$WRT_REPO" "refs/heads/$WRT_BRANCH" 2>/dev/null | cut -f1) || CUR_HASH=""
+          echo "immortalwrt source: last=$LAST_HASH current=${CUR_HASH:0:7}"
+          if [[ -z "$LAST_HASH" || -z "$CUR_HASH" || "$CUR_HASH" != "$LAST_HASH"* ]]; then
+            echo "Source changed or unreadable, build."
+            exit 0
+          fi
+
+          # PLUS 版追加比对插件仓库 commit（上次构建记录在 Release 的 Packages-*.txt 附件中）
+          if [[ "$WRT_PROFILE" == "PLUS" ]]; then
+            PKG_URL=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$LATEST_TAG" \
+              --jq '.assets[] | select(.name | startswith("Packages-")) | .browser_download_url' 2>/dev/null | head -1) || PKG_URL=""
+            if [[ -z "$PKG_URL" ]]; then
+              echo "Packages record missing, build."
+              exit 0
+            fi
+            PKG_FILE=$(mktemp)
+            curl -sL "$PKG_URL" -o "$PKG_FILE" || true
+            if [[ ! -s "$PKG_FILE" ]]; then
+              echo "Packages record unreadable, build."
+              exit 0
+            fi
+            CHANGED=0
+            while read -r NAME REPO BRANCH COMMIT; do
+              if [[ -z "$REPO" || -z "$BRANCH" || -z "$COMMIT" ]]; then continue; fi
+              CUR=$(git ls-remote "https://github.com/$REPO.git" "refs/heads/$BRANCH" 2>/dev/null | cut -f1) || CUR=""
+              echo "plugin $NAME: last=$COMMIT current=${CUR:0:7}"
+              if [[ -z "$CUR" || "$CUR" != "$COMMIT"* ]]; then CHANGED=1; fi
+            done < "$PKG_FILE"
+            if [[ "$CHANGED" == "1" ]]; then
+              echo "Plugin repo changed or unreadable, build."
+              exit 0
+            fi
+          fi
+
+          echo "No upstream changes since $LATEST_TAG, skip build."
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+
       - name: Clone Code
+        if: steps.changes.outputs.skip != 'true'
         run: |
           git clone --depth=1 --single-branch --branch $WRT_BRANCH $WRT_REPO ./wrt/
 
@@ -135,13 +202,14 @@ jobs:
           fi
 
       - name: Check Scripts
+        if: steps.changes.outputs.skip != 'true'
         run: |
           find ./ -maxdepth 3 -type f -iregex ".*\(txt\|sh\)$" -exec dos2unix {} \; -exec chmod +x {} \;
 
       # Cache lifecycle adapted from VIKINGYFY/OpenWRT-CI (MIT, Copyright 2026 VIKINGYFY).
       - name: Initialize Cache Values
         id: initialize-cache
-        if: env.WRT_TEST != 'true'
+        if: env.WRT_TEST != 'true' && steps.changes.outputs.skip != 'true'
         run: |
           WRT_SUBTARGET=$(grep -m 1 -oP "^CONFIG_TARGET_${WRT_TARGET}_\K[\w]+(?=\=y)" "./Config/$WRT_CONFIG.txt")
           WRT_CACHE_SOURCE=${WRT_SOURCE//\//-}
@@ -162,7 +230,7 @@ jobs:
 
       - name: Restore Build Cache
         id: check-cache
-        if: env.WRT_TEST != 'true'
+        if: env.WRT_TEST != 'true' && steps.changes.outputs.skip != 'true'
         uses: actions/cache/restore@v4
         with:
           # 缓存内容（ccache/宿主工具/工具链）与 profile 无关，PURE 和 PLUS 共享同一份，避免缓存翻倍挤占配额
@@ -177,7 +245,7 @@ jobs:
             ./wrt/staging_dir/tool*
 
       - name: Prepare Restored Build Cache
-        if: env.WRT_TEST != 'true' && steps.check-cache.outputs.cache-matched-key != ''
+        if: env.WRT_TEST != 'true' && steps.check-cache.outputs.cache-matched-key != '' && steps.changes.outputs.skip != 'true'
         run: |
           if [ -d "./wrt/staging_dir" ]; then
             find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r DIR; do
@@ -192,6 +260,7 @@ jobs:
           fi
 
       - name: Update Feeds
+        if: steps.changes.outputs.skip != 'true'
         run: |
           cd ./wrt/
 
@@ -202,6 +271,7 @@ jobs:
 
 
       - name: Custom Packages
+        if: steps.changes.outputs.skip != 'true'
         run: |
           cd ./wrt/package/
 
@@ -220,6 +290,7 @@ jobs:
           #$GITHUB_WORKSPACE/Scripts/Handles.sh
 
       - name: Custom Settings
+        if: steps.changes.outputs.skip != 'true'
         run: |
           cd ./wrt/
 
@@ -235,21 +306,21 @@ jobs:
           make defconfig -j$(nproc) && make clean -j$(nproc)
 
       - name: Download Packages
-        if: env.WRT_TEST != 'true'
+        if: env.WRT_TEST != 'true' && steps.changes.outputs.skip != 'true'
         run: |
           cd ./wrt/
 
           make download -j$(nproc)
 
       - name: Compile Firmware
-        if: env.WRT_TEST != 'true'
+        if: env.WRT_TEST != 'true' && steps.changes.outputs.skip != 'true'
         run: |
           cd ./wrt/
 
           make -j$(nproc) || make -j1 V=s
 
       - name: Save Build Cache
-        if: env.WRT_TEST != 'true' && success() && steps.check-cache.outputs.cache-hit != 'true'
+        if: env.WRT_TEST != 'true' && success() && steps.check-cache.outputs.cache-hit != 'true' && steps.changes.outputs.skip != 'true'
         uses: actions/cache/save@v4
         with:
           key: ${{env.WRT_CACHE_KEY}}
@@ -259,6 +330,7 @@ jobs:
             ./wrt/staging_dir/tool*
 
       - name: Machine Information
+        if: steps.changes.outputs.skip != 'true'
         run: |
           cd ./wrt/
 
@@ -271,6 +343,7 @@ jobs:
           echo "======================="
 
       - name: Package Firmware
+        if: steps.changes.outputs.skip != 'true'
         run: |
           cd ./wrt/ && mkdir -p ./upload/
 
@@ -319,6 +392,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Release Firmware
+        if: steps.changes.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.WRT_CONFIG }}-${{ env.WRT_PROFILE }}-${{ env.WRT_INFO }}-${{ env.WRT_BRANCH }}-${{ env.WRT_DATE }}
@@ -392,7 +466,7 @@ jobs:
   cache-rollover:
     name: Roll cache generations
     needs: core
-    if: inputs.WRT_TEST != 'true' && needs.core.result == 'success'
+    if: inputs.WRT_TEST != 'true' && needs.core.result == 'success' && needs.core.outputs.cache_key != ''
     runs-on: ubuntu-latest
     concurrency:
       group: wrt-cache-rollover-${{github.ref}}-${{needs.core.outputs.cache_prefix}}

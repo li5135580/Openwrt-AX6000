@@ -3,6 +3,9 @@ name: MTK-ALL
 
 #CI计划
 on:
+  #每6小时检测一次上游更新（源码+插件均无变化时自动跳过编译）
+  schedule:
+    - cron: 17 */6 * * *
   #自动编译：当Auto-Clean运行完成后
   workflow_run:
     workflows: ["Auto-Clean"]
@@ -23,6 +26,12 @@ on:
 
 #CI权限
 permissions: write-all
+
+#并发控制：同一时刻只跑一个构建，多余触发排队；
+#排队等到执行时上游比对会发现刚编过，自动跳过，不会重复编译
+concurrency:
+  group: mtk-all
+  cancel-in-progress: false
 
 #CI任务
 jobs:
