@@ -60,6 +60,7 @@ env:
   WRT_PACKAGE: ${{inputs.WRT_PACKAGE}}
   WRT_PROFILE: ${{inputs.WRT_PROFILE}}
   WRT_PKG_INFO: 无（纯净版不集成外部插件）
+  WRT_CHANGELOG: 首次发布或无对比基准，未生成变更列表
   WRT_TEST: ${{inputs.WRT_TEST}}
 
 jobs:
@@ -121,8 +122,74 @@ jobs:
         run: |
           # 默认不跳过
           echo "skip=false" >> "$GITHUB_OUTPUT"
+          CHANGELOG=$(mktemp)
+          CHANGED=0
 
-          # 自动触发（每小时 schedule 或 Auto-Clean 的 workflow_run）执行跳过判断；
+          # 以同配置同版本的最近一次 Release 为比对基准
+          LATEST_TAG=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
+            --jq "[.[] | select(.tag_name | startswith(\"$WRT_CONFIG-$WRT_PROFILE-\"))] | sort_by(.created_at) | last | .tag_name // empty" 2>/dev/null) || LATEST_TAG=""
+
+          if [[ -n "$LATEST_TAG" ]]; then
+            echo "Last release: $LATEST_TAG"
+
+            # 比对 immortalwrt 源码 commit（Release 正文记录的是短哈希，前缀匹配）
+            LAST_HASH=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$LATEST_TAG" --jq '.body' 2>/dev/null \
+              | grep -oP '提交版本：\K[0-9a-f]+' | head -1) || LAST_HASH=""
+            CUR_HASH=$(git ls-remote "$WRT_REPO" "refs/heads/$WRT_BRANCH" 2>/dev/null | cut -f1) || CUR_HASH=""
+            echo "immortalwrt source: last=$LAST_HASH current=${CUR_HASH:0:7}"
+            if [[ -z "$LAST_HASH" || -z "$CUR_HASH" ]]; then
+              CHANGED=1  # 读不到宁可照编
+            elif [[ "$CUR_HASH" != "$LAST_HASH"* ]]; then
+              CHANGED=1
+              {
+                echo "**$WRT_SOURCE@$WRT_BRANCH**："
+                CMP=$(gh api "repos/$WRT_SOURCE/compare/$LAST_HASH...$CUR_HASH" 2>/dev/null) || CMP=""
+                echo "$CMP" | jq -r '.commits[0:20][]? | "- " + (.commit.message | split("\n")[0])' 2>/dev/null || true
+                N=$(echo "$CMP" | jq -r '.total_commits // 0' 2>/dev/null) || N=0
+                if [[ "$N" =~ ^[0-9]+$ && "$N" -gt 20 ]]; then echo "- ……等共 $N 个提交"; fi
+                echo ""
+              } >> "$CHANGELOG"
+            fi
+
+            # PLUS 版追加比对插件仓库 commit（上次构建记录在 Release 的 Packages-*.txt 附件中）
+            if [[ "$WRT_PROFILE" == "PLUS" ]]; then
+              PKG_URL=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$LATEST_TAG" \
+                --jq '.assets[] | select(.name | startswith("Packages-")) | .browser_download_url' 2>/dev/null | head -1) || PKG_URL=""
+              if [[ -z "$PKG_URL" ]]; then
+                CHANGED=1  # 记录缺失宁可照编
+              else
+                PKG_FILE=$(mktemp)
+                curl -sL "$PKG_URL" -o "$PKG_FILE" || true
+                if [[ ! -s "$PKG_FILE" ]]; then
+                  CHANGED=1
+                else
+                  while read -r NAME REPO BRANCH COMMIT; do
+                    if [[ -z "$REPO" || -z "$BRANCH" || -z "$COMMIT" ]]; then continue; fi
+                    CUR=$(git ls-remote "https://github.com/$REPO.git" "refs/heads/$BRANCH" 2>/dev/null | cut -f1) || CUR=""
+                    echo "plugin $NAME: last=$COMMIT current=${CUR:0:7}"
+                    if [[ -z "$CUR" ]]; then
+                      CHANGED=1
+                    elif [[ "$CUR" != "$COMMIT"* ]]; then
+                      CHANGED=1
+                      {
+                        echo "**$REPO@$BRANCH**："
+                        gh api "repos/$REPO/compare/$COMMIT...$CUR" \
+                          --jq '.commits[0:10][]? | "- " + (.commit.message | split("\n")[0])' 2>/dev/null || true
+                        echo ""
+                      } >> "$CHANGELOG"
+                    fi
+                  done < "$PKG_FILE"
+                fi
+              fi
+            fi
+          fi
+
+          # 变更列表写入环境变量，供 Release 正文引用
+          if [[ -s "$CHANGELOG" ]]; then
+            { echo 'WRT_CHANGELOG<<EOF'; cat "$CHANGELOG"; echo 'EOF'; } >> "$GITHUB_ENV"
+          fi
+
+          # 仅自动触发（schedule / workflow_run）执行跳过判断；
           # 手动触发（workflow_dispatch）与 TEST 模式一律正常编译
           case "${{ github.event_name }}" in
             schedule|workflow_run) ;;
@@ -133,50 +200,13 @@ jobs:
             exit 0
           fi
 
-          # 以同配置同版本的最近一次 Release 为比对基准
-          LATEST_TAG=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
-            --jq "[.[] | select(.tag_name | startswith(\"$WRT_CONFIG-$WRT_PROFILE-\"))] | sort_by(.created_at) | last | .tag_name // empty" 2>/dev/null) || LATEST_TAG=""
           if [[ -z "$LATEST_TAG" ]]; then
             echo "No previous release for $WRT_CONFIG-$WRT_PROFILE, build."
             exit 0
           fi
-          echo "Last release: $LATEST_TAG"
-
-          # 比对 immortalwrt 源码 commit（Release 正文记录的是短哈希，前缀匹配）
-          LAST_HASH=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$LATEST_TAG" --jq '.body' 2>/dev/null \
-            | grep -oP '提交版本：\K[0-9a-f]+' | head -1) || LAST_HASH=""
-          CUR_HASH=$(git ls-remote "$WRT_REPO" "refs/heads/$WRT_BRANCH" 2>/dev/null | cut -f1) || CUR_HASH=""
-          echo "immortalwrt source: last=$LAST_HASH current=${CUR_HASH:0:7}"
-          if [[ -z "$LAST_HASH" || -z "$CUR_HASH" || "$CUR_HASH" != "$LAST_HASH"* ]]; then
-            echo "Source changed or unreadable, build."
+          if [[ "$CHANGED" == "1" ]]; then
+            echo "Upstream changed or unreadable, build."
             exit 0
-          fi
-
-          # PLUS 版追加比对插件仓库 commit（上次构建记录在 Release 的 Packages-*.txt 附件中）
-          if [[ "$WRT_PROFILE" == "PLUS" ]]; then
-            PKG_URL=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$LATEST_TAG" \
-              --jq '.assets[] | select(.name | startswith("Packages-")) | .browser_download_url' 2>/dev/null | head -1) || PKG_URL=""
-            if [[ -z "$PKG_URL" ]]; then
-              echo "Packages record missing, build."
-              exit 0
-            fi
-            PKG_FILE=$(mktemp)
-            curl -sL "$PKG_URL" -o "$PKG_FILE" || true
-            if [[ ! -s "$PKG_FILE" ]]; then
-              echo "Packages record unreadable, build."
-              exit 0
-            fi
-            CHANGED=0
-            while read -r NAME REPO BRANCH COMMIT; do
-              if [[ -z "$REPO" || -z "$BRANCH" || -z "$COMMIT" ]]; then continue; fi
-              CUR=$(git ls-remote "https://github.com/$REPO.git" "refs/heads/$BRANCH" 2>/dev/null | cut -f1) || CUR=""
-              echo "plugin $NAME: last=$COMMIT current=${CUR:0:7}"
-              if [[ -z "$CUR" || "$CUR" != "$COMMIT"* ]]; then CHANGED=1; fi
-            done < "$PKG_FILE"
-            if [[ "$CHANGED" == "1" ]]; then
-              echo "Plugin repo changed or unreadable, build."
-              exit 0
-            fi
           fi
 
           echo "No upstream changes since $LATEST_TAG, skip build."
@@ -408,6 +438,10 @@ jobs:
             版本说明：${{ env.WRT_PROFILE_DESC }}
             提交版本：${{ env.WRT_HASH }}
             编译时间：${{ env.WRT_DATE }}
+            ━━━━━━━━━━━━━━━━━━━━━━━
+
+            🆕 本次上游更新（相对上次发布）
+            ${{ env.WRT_CHANGELOG }}
             ━━━━━━━━━━━━━━━━━━━━━━━
 
             📌 外部插件来源
