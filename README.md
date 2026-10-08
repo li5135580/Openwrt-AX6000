@@ -1,7 +1,10 @@
 # 🚀 ImmortalWrt 京东云百里 AX6000 固件（云编译 · 每日跟随 master）
 
 OpenWrt / ImmortalWrt / AX6000 / MT7986A / JDCloud RE-CP-03 / WED / 云编译
-> 基于 ImmortalWrt **master 快照分支**的定制固件，适配京东云无线宝百里 AX6000（RE-CP-03），每天早上 6 点（北京时间）自动跟随上游 master 编译并发布
+> 基于 ImmortalWrt **master 快照分支**的定制固件，适配京东云无线宝百里 AX6000（RE-CP-03），每 6 小时自动检测上游更新并编译发布
+
+> 🔀 **本仓库为 master 滚动快照版**：内核 6.18、特性最新，适合追新。
+> 想要更稳？👉 **[openwrt-25.12 稳定分支版 → Openwrt-AX6000-25.12](https://github.com/li5135580/Openwrt-AX6000-25.12)**
 
 [👉 进入 Releases 下载固件](../../releases)
 
@@ -23,7 +26,7 @@ OpenWrt / ImmortalWrt / AX6000 / MT7986A / JDCloud RE-CP-03 / WED / 云编译
 ## ⭐ 项目特点
 
 - 🔥 **云编译构建** - 基于 GitHub Actions 完全自动化编译
-- 🔄 **每日跟随上游** - 跟踪 ImmortalWrt master 快照分支，每天自动编译发布
+- 🔄 **滚动跟随上游** - 跟踪 ImmortalWrt master 快照分支，上游有更新自动编译发布
 - ⚡ **硬件卸载** - 支持 MT7986 的 WED（Wireless Ethernet Dispatch）无线硬件卸载
 - 🌐 **2.5G 网口** - RTL8221B 2.5GbE 支持
 - 📦 **双版本** - PURE 纯净版 / PLUS 全量版，按需选择
