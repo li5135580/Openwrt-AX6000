@@ -21,7 +21,7 @@ OpenWrt / ImmortalWrt / AX6000 / MT7986A / JDCloud RE-CP-03 / WED / 云编译
 | 以太网 | 4× 1GbE + 1× 2.5GbE |
 | 无线 | 双频 WiFi 6：2.4GHz 4×4（1148Mbps）+ 5GHz 4×4（4804Mbps @160MHz） |
 | Target | `mediatek/filogic` |
-| Profile | `jdcloud_re-cp-03` |
+| Profile | `jdcloud_re-cp-03`/`jdcloud_re-cp-05` |
 
 ## ⭐ 项目特点
 
