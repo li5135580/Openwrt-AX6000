@@ -16,6 +16,7 @@ body:
       options:
         - PURE 纯净版
         - PLUS 版
+        - PROMAX 版
         - 还没刷，准备刷
     validations:
       required: true
