@@ -30,11 +30,11 @@ on:
 #CI权限
 permissions: write-all
 
-#并发控制：同一时刻只跑一个构建，多余触发排队；
-#排队等到执行时上游比对会发现刚编过，自动跳过，不会重复编译
+#并发控制：同一时刻只跑一个构建；新触发会取消正在跑的旧构建，
+#因为每次构建都是当时最新代码，旧构建产物必然过时，排队纯属浪费
 concurrency:
   group: mtk-all
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 #CI任务
 jobs:
